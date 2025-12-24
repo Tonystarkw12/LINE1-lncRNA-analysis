@@ -1,0 +1,64 @@
+# LINE-1 lncRNA 项目配置文件
+
+# 数据配置
+data:
+  # 参考基因组
+  reference_genome: "hg38"
+  genome_fasta: "data/reference/hg38.fa"
+  genome_index: "data/reference/hg38.bwa"
+  
+  # 注释文件
+  gtf_annotation: "data/annotation/gencode.v45.annotation.gtf"
+  gff_annotation: "data/annotation/gencode.v45.annotation.gff3"
+  
+  # LINE-1 序列
+  line1_sequences: "data/line1/LINE1_sequences.fa"
+  line1_bed: "data/line1/LINE1.bed"
+  
+  # RNA-seq 数据
+  raw_data_dir: "data/raw/"
+  processed_data_dir: "data/processed/"
+  counts_file: "data/processed/gene_counts.txt"
+  
+  # GEO 数据集示例 (可替换为实际数据集)
+  geo_dataset: "GSE123456"
+  sra_accessions:
+    control: ["SRR1234567", "SRR1234568", "SRR1234569"]
+    treatment: ["SRR1234570", "SRR1234571", "SRR1234572"]
+
+# 分析参数
+analysis:
+  # 差异表达阈值
+  differential_expression:
+    padj_threshold: 0.05
+    log2fc_threshold: 1.0
+    
+  # 保守性分析
+  conservation:
+    phylop_threshold: 2.0
+    
+  # 网络分析
+  network:
+    min_degree: 2
+    clustering_threshold: 0.1
+    
+# 工具路径
+tools:
+  bedtools: "bedtools"
+  samtools: "samtools"
+  bwa: "bwa"
+  fastp: "fastp"
+  
+# 输出路径
+output:
+  figures_dir: "results/figures/"
+  tables_dir: "results/tables/"
+  reports_dir: "results/reports/"
+  network_dir: "results/networks/"
+  
+# 可视化参数
+visualization:
+  figure_format: "png"
+  figure_dpi: 300
+  figure_size: [10, 8]
+  color_palette: "viridis"

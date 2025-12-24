@@ -1,0 +1,46 @@
+name: line1_lncrna
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.9
+  - r-base=4.3
+  - jupyter
+  - biopython
+  - pandas
+  - numpy
+  - matplotlib
+  - seaborn
+  - networkx
+  - scipy
+  - scikit-learn
+  - plotly
+  - requests
+  - tqdm
+  - bedtools
+  - samtools
+  - bwa
+  - sra-tools
+  - fastp
+  - r-deseq2
+  - r-ggplot2
+  - r-dplyr
+  - r-tidyr
+  - r-readr
+  - r-stringr
+  - r-reshape2
+  - r-pheatmap
+  - r-enhancedvolcano
+  - bioconductor-genomicfeatures
+  - bioconductor-genomicranges
+  - bioconductor-annotationdbi
+  - bioconductor-org.hs.eg.db
+  - bioconductor-clusterprofiler
+  - bioconductor-enrichplot
+  - pip
+  - pip:
+    - rnafold
+    - pybedtools
+    - pysam
+    - pyBigWig

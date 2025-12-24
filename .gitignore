@@ -1,0 +1,89 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Data files (large)
+data/raw/*.fastq
+data/raw/*.bam
+data/raw/*.sam
+data/raw/*.fq
+data/processed/*.bam
+data/processed/*.sam
+data/reference/*.fa
+data/reference/*.fasta
+data/reference/*.fna
+
+# Results
+results/figures/*.png
+results/figures/*.pdf
+results/figures/*.svg
+results/tables/*.csv
+results/tables/*.tsv
+results/tables/*.xlsx
+results/networks/*.graphml
+results/networks/*.gml
+results/reports/*.pdf
+results/reports/*.html
+results/reports/*.docx
+
+# Logs
+logs/*.log
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Conda
+*.conda
+*.tar.bz2
