@@ -12,11 +12,27 @@ import yaml
 from pathlib import Path
 from Bio import SeqIO
 from Bio.Seq import Seq
-from Bio.SeqUtils import GC
+
+try:
+    # Biopython >= 1.78
+    from Bio.SeqUtils import gc_fraction  # type: ignore
+except Exception:
+    gc_fraction = None
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import List, Dict, Tuple
 import requests
+
+
+def gc_percent(seq) -> float:
+    """Return GC% for a sequence (works across Biopython versions)."""
+    seq_str = str(seq).upper()
+    if not seq_str:
+        return 0.0
+    if gc_fraction is not None:
+        return float(gc_fraction(seq_str)) * 100.0
+    return 100.0 * (seq_str.count("G") + seq_str.count("C")) / len(seq_str)
 
 class SequenceAnalyzer:
     """序列分析器"""
@@ -72,21 +88,31 @@ class SequenceAnalyzer:
         # 提取序列
         with open(output_file, 'w') as out_f:
             for gene_id, coords in lncrna_coords.items():
-                # 使用bedtools提取序列
-                cmd = f"""bedtools getfasta -fi {genome_fasta} \\
-                    -chr {coords['chr']} -start {coords['start']} -end {coords['end']} \\
-                    -name -s > temp_seq.fa"""
+                # 使用bedtools提取序列：getfasta 需要 BED 输入（而不是 -chr/-start/-end 参数）
+                temp_bed = f"temp_{gene_id}.bed"
+                temp_fa = f"temp_{gene_id}.fa"
+
+                bed_start = max(0, int(coords['start']) - 1)  # BED 是 0-based
+                bed_end = int(coords['end'])
+                bed_name = f"{gene_id}|{coords['name']}"
+
+                with open(temp_bed, "w", encoding="utf-8") as bed_f:
+                    bed_f.write(f"{coords['chr']}\t{bed_start}\t{bed_end}\t{bed_name}\t0\t{coords['strand']}\n")
+
+                cmd = f"bedtools getfasta -fi {genome_fasta} -bed {temp_bed} -s -name > {temp_fa}"
                 subprocess.run(cmd, shell=True, check=True, stdout=subprocess.DEVNULL)
-                
+
                 # 读取临时序列文件
-                with open("temp_seq.fa", 'r') as temp_f:
+                with open(temp_fa, "r", encoding="utf-8") as temp_f:
                     seq_record = next(SeqIO.parse(temp_f, "fasta"))
-                    seq_record.id = f"{gene_id}|{coords['name']}"
+                    seq_record.id = bed_name
                     seq_record.description = f"{coords['chr']}:{coords['start']}-{coords['end']}({coords['strand']})"
                     SeqIO.write(seq_record, out_f, "fasta")
-                
+
                 # 清理临时文件
-                os.remove("temp_seq.fa")
+                for p in (temp_bed, temp_fa):
+                    if os.path.exists(p):
+                        os.remove(p)
         
         print(f"✓ 序列提取完成，共提取 {len(lncrna_coords)} 个lncRNA序列")
     
@@ -198,7 +224,7 @@ class SequenceAnalyzer:
                         energy = float(output_lines[1].split('(')[1].split(')')[0])  # 自由能
                         
                         # 计算结构特征
-                        gc_content = GC(record.seq)
+                        gc_content = gc_percent(record.seq)
                         length = len(record.seq)
                         
                         # 计算碱基配对比例
@@ -277,7 +303,7 @@ class SequenceAnalyzer:
             
             # 基本特征
             length = len(seq)
-            gc_content = GC(seq)
+            gc_content = gc_percent(seq)
             at_content = 100 - gc_content
             
             # k-mer分析

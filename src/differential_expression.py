@@ -49,69 +49,90 @@ class DifferentialExpression:
             counts_file: 计数文件路径
             output_dir: 输出目录
         """
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+        padj_threshold = self.config['analysis']['differential_expression']['padj_threshold']
+        log2fc_threshold = self.config['analysis']['differential_expression']['log2fc_threshold']
+
         script_content = f'''
 # DESeq2差异表达分析脚本
-library(DESeq2)
-library(ggplot2)
-library(pheatmap)
-library(EnhancedVolcano)
+suppressPackageStartupMessages({{
+  library(DESeq2)
+  library(ggplot2)
+  library(pheatmap)
+  library(EnhancedVolcano)
+}})
+
+padj_threshold <- {padj_threshold}
+log2fc_threshold <- {log2fc_threshold}
 
 # 读取计数数据
-counts <- read.table("{counts_file}", header=TRUE, row.names=1, comment.char="#")
-# 移除前几行注释，保留实际的计数矩阵
-counts <- counts[6:nrow(counts), ]
+# 兼容两种输入：
+# 1) featureCounts 输出（包含 Geneid, Chr, Start, End, Strand, Length + 样本列）
+# 2) 纯计数矩阵（包含 Geneid + 样本列，或第一列为基因ID）
+counts_raw <- read.delim("{counts_file}", header=TRUE, comment.char="#", check.names=FALSE)
 
-# 提取基因ID和计数矩阵
-gene_ids <- counts$Geneid
-count_matrix <- as.matrix(counts[,6:ncol(counts)])
-rownames(count_matrix) <- gene_ids
+if (nrow(counts_raw) == 0) {{
+  stop("counts 文件为空或无法解析: {counts_file}")
+}}
 
-# 创建样本信息
-coldata <- data.frame(
-    condition = factor(c(rep("control", 3), rep("L1OE", 3))),
-    row.names = colnames(count_matrix)
-)
+featurecounts_cols <- c("Geneid", "Chr", "Start", "End", "Strand", "Length")
 
-# 创建DESeq2对象
-dds <- DESeqDataSetFromMatrix(
-    countData = count_matrix,
-    colData = coldata,
-    design = ~ condition
-)
+if (all(featurecounts_cols %in% colnames(counts_raw))) {{
+  gene_ids <- counts_raw$Geneid
+  count_df <- counts_raw[, setdiff(colnames(counts_raw), featurecounts_cols), drop=FALSE]
+}} else {{
+  if ("Geneid" %in% colnames(counts_raw)) {{
+    gene_ids <- counts_raw$Geneid
+    count_df <- counts_raw[, setdiff(colnames(counts_raw), "Geneid"), drop=FALSE]
+  }} else {{
+    gene_ids <- counts_raw[[1]]
+    count_df <- counts_raw[, -1, drop=FALSE]
+  }}
+}}
+
+count_matrix <- as.matrix(count_df)
+mode(count_matrix) <- "numeric"
+count_matrix[is.na(count_matrix)] <- 0
+count_matrix <- round(count_matrix)
+
+rownames(count_matrix) <- make.unique(as.character(gene_ids))
+
+# 创建样本信息：默认前一半 control，后一半 L1OE
+n_samples <- ncol(count_matrix)
+if (n_samples < 2) {{
+  stop("样本列数不足，无法运行 DESeq2。至少需要 2 个样本列。")
+}}
+
+n_control <- floor(n_samples / 2)
+n_treat <- n_samples - n_control
+condition <- factor(c(rep("control", n_control), rep("L1OE", n_treat)))
+
+coldata <- data.frame(condition = condition, row.names = colnames(count_matrix))
+
+dds <- DESeqDataSetFromMatrix(countData = count_matrix, colData = coldata, design = ~ condition)
 
 # 预过滤低表达基因
 keep <- rowSums(counts(dds) >= 10) >= 3
 dds <- dds[keep,]
 
-# 运行DESeq2
 dds <- DESeq(dds)
 
-# 获取结果
 res <- results(dds, contrast=c("condition", "L1OE", "control"))
-res <- lfcShrink(dds, coef="condition_L1OE_vs_control", type="apeglm")
 
-# 添加基因注释
-library(org.Hs.eg.db)
-res$symbol <- mapIds(org.Hs.eg.db,
-                     keys=row.names(res),
-                     column="SYMBOL",
-                     keytype="ENSEMBL",
-                     multiVals="first")
-
-# 筛选显著差异基因
-padj_threshold <- {self.config['analysis']['differential_expression']['padj_threshold']}
-log2fc_threshold <- {self.config['analysis']['differential_expression']['log2fc_threshold']}
-
-res_sig <- res[which(res$padj < padj_threshold & abs(res$log2FoldChange) > log2fc_threshold), ]
+# lfcShrink 的 apeglm/ashr 需要额外依赖；这里使用 "normal" 以保证默认可运行
+res <- lfcShrink(dds, coef="condition_L1OE_vs_control", type="normal")
 
 # 保存结果
 write.csv(as.data.frame(res), file="{output_dir}/all_genes_deseq2.csv")
+
+res_sig <- res[which(!is.na(res$padj) & res$padj < padj_threshold & abs(res$log2FoldChange) > log2fc_threshold), ]
 write.csv(as.data.frame(res_sig), file="{output_dir}/significant_genes_deseq2.csv")
 
 # 绘制火山图
 png("{output_dir}/volcano_plot.png", width=1200, height=800, res=300)
-EnhancedVolcano(res,
-    lab = res$symbol,
+EnhancedVolcano(as.data.frame(res),
+    lab = rownames(res),
     x = 'log2FoldChange',
     y = 'padj',
     xlab = bquote(~Log[2]~ 'fold change'),
@@ -121,34 +142,38 @@ EnhancedVolcano(res,
     pointSize = 2.0,
     labSize = 3.0,
     title = 'L1OE vs Control',
-    subtitle = 'Differential Expression Analysis',
-    caption = 'padj cutoff < 0.05; Log2FC cutoff > 1')
+    subtitle = 'Differential Expression Analysis')
 dev.off()
 
-# 绘制热图
-top_genes <- head(order(res$padj), 50)
-mat <- assay(rlog(dds))[top_genes, ]
-mat <- mat - rowMeans(mat)
-png("{output_dir}/heatmap_top50.png", width=1200, height=1000, res=300)
-pheatmap(mat, 
-         annotation_col=coldata,
-         show_rownames=TRUE,
-         show_colnames=TRUE,
-         fontsize_row=8,
-         fontsize_col=12,
-         main="Top 50 Differential Expressed Genes")
-dev.off()
+# 绘制热图（按 padj 取前 50）
+res_order <- order(res$padj, na.last=NA)
+top_genes <- head(res_order, 50)
+
+if (length(top_genes) > 2) {{
+  rld <- rlog(dds, blind=FALSE)
+  mat <- assay(rld)[top_genes, , drop=FALSE]
+  mat <- mat - rowMeans(mat)
+  png("{output_dir}/heatmap_top50.png", width=1200, height=1000, res=300)
+  pheatmap(mat,
+           annotation_col=coldata,
+           show_rownames=TRUE,
+           show_colnames=TRUE,
+           fontsize_row=8,
+           fontsize_col=12,
+           main="Top 50 Differential Expressed Genes")
+  dev.off()
+}}
 
 # PCA分析
 png("{output_dir}/pca_plot.png", width=1000, height=800, res=300)
 vsd <- vst(dds, blind=FALSE)
-plotPCA(vsd, intgroup="condition") + 
-    ggtitle("PCA of RNA-seq Samples") +
-    theme_minimal()
+print(plotPCA(vsd, intgroup="condition") +
+  ggtitle("PCA of RNA-seq Samples") +
+  theme_minimal())
 dev.off()
 
 cat("DESeq2分析完成!\\n")
-cat("差异基因数量:", nrow(res_sig), "\\n")
+cat("显著差异基因数量:", nrow(res_sig), "\\n")
 '''
         
         script_path = f"{output_dir}/deseq2_analysis.R"
@@ -191,7 +216,7 @@ cat("差异基因数量:", nrow(res_sig), "\\n")
             for line in f:
                 if line.startswith('#'):
                     continue
-                fields = line.strip().split('\\t')
+                fields = line.strip().split('\t')
                 if len(fields) >= 9:
                     attributes = fields[8]
                     if 'gene_biotype "lncRNA"' in attributes:
@@ -236,7 +261,7 @@ cat("差异基因数量:", nrow(res_sig), "\\n")
         
         # 分析结果
         overlap_df = pd.read_csv("data/processed/lncrna_line1_overlap.txt", 
-                                sep='\\t', header=None,
+                                sep='\t', header=None,
                                 names=['lncRNA_chr', 'lncRNA_start', 'lncRNA_end', 'lncRNA_id',
                                        'LINE1_chr', 'LINE1_start', 'LINE1_end', 'LINE1_id'])
         
@@ -260,7 +285,7 @@ cat("差异基因数量:", nrow(res_sig), "\\n")
                 for line in in_f:
                     if line.startswith('#'):
                         continue
-                    fields = line.strip().split('\\t')
+                    fields = line.strip().split('\t')
                     if len(fields) >= 9:
                         attributes = fields[8]
                         if 'gene_biotype "lncRNA"' in attributes:
@@ -275,7 +300,7 @@ cat("差异基因数量:", nrow(res_sig), "\\n")
                                 chrom = fields[0]
                                 start = int(fields[3]) - 1  # BED格式是0-based
                                 end = fields[4]
-                                out_f.write(f"{chrom}\\t{start}\\t{end}\\t{gene_id}\\t.\\t{fields[6]}\\n")
+                                out_f.write(f"{chrom}\t{start}\t{end}\t{gene_id}\t.\t{fields[6]}\n")
     
     def _calculate_distance(self, row):
         """计算lncRNA与LINE-1之间的距离"""

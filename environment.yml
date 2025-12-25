@@ -18,12 +18,12 @@ dependencies:
   - plotly
   - requests
   - tqdm
+  - pyyaml
   - bedtools
   - samtools
   - bwa
   - sra-tools
   - fastp
-  - r-deseq2
   - r-ggplot2
   - r-dplyr
   - r-tidyr
@@ -31,16 +31,9 @@ dependencies:
   - r-stringr
   - r-reshape2
   - r-pheatmap
-  - r-enhancedvolcano
   - bioconductor-genomicfeatures
   - bioconductor-genomicranges
   - bioconductor-annotationdbi
   - bioconductor-org.hs.eg.db
   - bioconductor-clusterprofiler
-  - bioconductor-enrichplot
-  - pip
-  - pip:
-    - rnafold
-    - pybedtools
-    - pysam
-    - pyBigWig
+  - bioconductor-deseq2

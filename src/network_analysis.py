@@ -48,6 +48,7 @@ class NetworkAnalyzer:
         self._calculate_network_metrics(G)
         
         # 保存网络
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
         nx.write_edgelist(G, output_file)
         
         print(f"✓ PPI网络构建完成，节点数: {G.number_of_nodes()}, 边数: {G.number_of_edges()}")
@@ -73,28 +74,27 @@ class NetworkAnalyzer:
         # 分批查询以避免API限制
         batch_size = 100
         for i in range(0, len(gene_list), batch_size):
-            batch_genes = gene_list[i:i+batch_size]
-            genes_str = "%0d".join(ord(c) for c in ",".join(batch_genes))
-            
+            batch_genes = gene_list[i:i + batch_size]
+
             params = {
                 "identifiers": ",".join(batch_genes),
                 "species": 9606,  # 人类
                 "required_score": int(score_threshold * 1000),
-                "limit": 1000
+                "limit": 1000,
             }
-            
+
             try:
-                response = requests.get(string_url, params=params)
+                response = requests.get(string_url, params=params, timeout=30)
                 if response.status_code == 200:
                     interactions = response.json()
                     for interaction in interactions:
-                        gene1 = interaction['preferredName_A']
-                        gene2 = interaction['preferredName_B']
-                        score = interaction['score']
-                        
-                        if score >= score_threshold * 1000:
+                        gene1 = interaction.get("preferredName_A")
+                        gene2 = interaction.get("preferredName_B")
+                        score = interaction.get("score")
+
+                        if gene1 and gene2 and score is not None and float(score) >= float(score_threshold):
                             ppi_edges.append((gene1, gene2))
-                
+
             except Exception as e:
                 print(f"STRING API查询失败: {e}")
                 # 使用模拟数据
@@ -242,6 +242,30 @@ class NetworkAnalyzer:
             output_file: 输出文件
         """
         print("识别关键调控因子...")
+
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+
+        # 空网络直接返回（避免后续 DataFrame 缺列导致 KeyError）
+        if network.number_of_nodes() == 0:
+            metrics_df = pd.DataFrame(columns=[
+                "node",
+                "type",
+                "degree",
+                "degree_centrality",
+                "betweenness_centrality",
+                "closeness_centrality",
+                "eigenvector_centrality",
+                "hub_score",
+            ])
+            metrics_df.to_csv(output_file, index=False)
+
+            key_regulators = {"hubs": [], "bottlenecks": [], "top_hubs": []}
+            with open(output_file.replace(".csv", "_key_regulators.txt"), "w", encoding="utf-8") as f:
+                f.write("关键调控因子分析结果\n\n")
+                f.write("网络为空：未识别到任何节点。\n")
+
+            print("✓ 关键调控因子识别完成（网络为空）")
+            return metrics_df, key_regulators
         
         # 提取网络指标
         node_metrics = []
@@ -286,7 +310,7 @@ class NetworkAnalyzer:
         # 保存结果
         metrics_df.to_csv(output_file, index=False)
         
-        with open(output_file.replace('.csv', '_key_regulators.txt'), 'w') as f:
+        with open(output_file.replace('.csv', '_key_regulators.txt'), 'w', encoding='utf-8') as f:
             f.write("关键调控因子分析结果\\n\\n")
             f.write(f"Top 20 关键节点:\\n")
             for node in key_regulators['top_hubs']:
@@ -304,7 +328,7 @@ class NetworkAnalyzer:
         
         return metrics_df, key_regulators
     
-    def perform_network_clustering(self, network: nx.Graph, output_file: str, 
+    def perform_network_clustering(self, network: nx.Graph, output_file: str,
                                  n_clusters: int = 5):
         """
         网络聚类分析
@@ -315,6 +339,27 @@ class NetworkAnalyzer:
             n_clusters: 聚类数量
         """
         print("进行网络聚类分析...")
+
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+
+        # 空网络直接返回，避免 KMeans / 社区发现算法报错
+        if network.number_of_nodes() == 0:
+            cluster_df = pd.DataFrame(columns=[
+                "cluster_id",
+                "size",
+                "density",
+                "lncRNA_count",
+                "mRNA_count",
+                "LINE1_count",
+                "nodes",
+            ])
+            cluster_df.to_csv(output_file, index=False)
+
+            node_clusters = pd.DataFrame(columns=["node", "cluster"])
+            node_clusters.to_csv(output_file.replace(".csv", "_nodes.csv"), index=False)
+
+            print("✓ 网络聚类完成（网络为空）")
+            return cluster_df, {}
         
         # 使用社区发现算法
         try:
@@ -330,7 +375,7 @@ class NetworkAnalyzer:
         # 分析聚类特征
         cluster_stats = []
         for cluster_id in set(communities.values()):
-            nodes_in_cluster = [node for node, comm in communities.items() 
+            nodes_in_cluster = [node for node, comm in communities.items()
                               if comm == cluster_id]
             
             # 计算聚类内连接密度
@@ -359,7 +404,7 @@ class NetworkAnalyzer:
         
         # 保存节点聚类标签
         node_clusters = pd.DataFrame([
-            {'node': node, 'cluster': communities[node]} 
+            {'node': node, 'cluster': communities[node]}
             for node in network.nodes()
         ])
         node_clusters.to_csv(output_file.replace('.csv', '_nodes.csv'), index=False)
@@ -370,14 +415,21 @@ class NetworkAnalyzer:
     
     def _simple_clustering(self, network: nx.Graph, n_clusters: int) -> Dict:
         """简单的聚类方法"""
+        nodes = list(network.nodes())
+        if len(nodes) == 0:
+            return {}
+
         # 使用节点度数进行K-means聚类
-        degrees = np.array([network.degree(node) for node in network.nodes()]).reshape(-1, 1)
-        
+        degrees = np.array([network.degree(node) for node in nodes]).reshape(-1, 1)
+
+        # n_clusters 必须在 [1, n_samples] 范围内
+        n_clusters = int(max(1, min(n_clusters, len(nodes))))
+
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
         cluster_labels = kmeans.fit_predict(degrees)
         
         communities = {}
-        for i, node in enumerate(network.nodes()):
+        for i, node in enumerate(nodes):
             communities[node] = int(cluster_labels[i])
         
         return communities
@@ -438,6 +490,7 @@ cat("通路分析完成\\n")
 '''
         
         script_path = "results/networks/pathway_analysis.R"
+        Path(script_path).parent.mkdir(parents=True, exist_ok=True)
         with open(script_path, 'w', encoding='utf-8') as f:
             f.write(r_script)
         
