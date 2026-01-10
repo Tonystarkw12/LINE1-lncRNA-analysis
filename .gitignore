@@ -57,24 +57,36 @@ data/raw/*.fastq
 data/raw/*.bam
 data/raw/*.sam
 data/raw/*.fq
+data/raw/*.gz
 data/processed/*.bam
 data/processed/*.sam
+data/processed/*.gz
+data/processed/*.tar
 data/reference/*.fa
 data/reference/*.fasta
 data/reference/*.fna
+data/reference/hg38_hisat2/
+data/reference/*.ht2
 
-# Results
-results/figures/*.png
-results/figures/*.pdf
-results/figures/*.svg
-results/tables/*.csv
-results/tables/*.tsv
-results/tables/*.xlsx
-results/networks/*.graphml
-results/networks/*.gml
-results/reports/*.pdf
-results/reports/*.html
-results/reports/*.docx
+# Fastp reports
+fastp.html
+fastp.json
+
+# CLAUDE.md memory files (auto-generated)
+**/CLAUDE.md
+
+# # Results
+# results/figures/*.png
+# results/figures/*.pdf
+# results/figures/*.svg
+# results/tables/*.csv
+# results/tables/*.tsv
+# results/tables/*.xlsx
+# results/networks/*.graphml
+# results/networks/*.gml
+# results/reports/*.pdf
+# results/reports/*.html
+# results/reports/*.docx
 
 # Logs
 logs/*.log
